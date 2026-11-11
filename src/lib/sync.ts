@@ -2,7 +2,7 @@
  * سیستم هماهنگ‌سازی خودکار دیتابیس با سرور ابری کلادفلر (Cloudflare Worker & KV)
  * تمام دستگاه‌ها (گوشی، لپ‌تاپ و تبلت) به صورت مستقل و مستقیم با کلادفلر تبادل اطلاعات دارند.
  */
-import { exportDatabase, importDatabase } from "./store";
+import { exportDatabase, importDatabase, getLocalModifiedTime } from "./store";
 import { LocalSnapshotService } from "./localSnapshots";
 import { offlineQueue } from "./offlineQueue";
 
@@ -167,7 +167,6 @@ class SyncManager {
       // هماهنگ‌سازی هنگام فعال شدن تب یا اتصال مجدد اینترنت / وی‌پی‌ان
       // با اولویت دیتای دیوایس (Device Precedence)
       const handleReconnection = () => {
-        offlineQueue.processQueue().catch(() => {});
         this.reconcileWithServer();
       };
 
@@ -262,6 +261,7 @@ class SyncManager {
         if (resBody.success && resBody.lastUpdated) {
           this.lastSyncedMtime = resBody.lastUpdated;
           localStorage.setItem("focusflow_last_synced_mtime", this.lastSyncedMtime.toString());
+          localStorage.setItem("focusflow_local_mtime", this.lastSyncedMtime.toString());
           this.hasUnsavedLocalChanges = false;
           localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
           offlineQueue.clearQueue().catch(() => {});
@@ -523,21 +523,45 @@ class SyncManager {
       }
 
       // اطلاعات با هم یکی نیستند:
-      // ۱. اگر این دستگاه تغییرات ذخیره‌نشده محلی دارد، تغییراتش را به سرور تحمیل کند
-      if (this.hasUnsavedLocalChanges) {
-        console.log(`Sync: Device has unsaved changes. Imposing device data on database...`);
+      const localMtime = getLocalModifiedTime();
+
+      // ۱. اگر سرور تغییر جدیدتری دارد (سرور بعد از آخرین ویرایش کاربر در این دستگاه بروزرسانی شده):
+      // قطعا اطلاعات سرور جدیدتر است و دستگاه باید دیتای سرور را تحویل بگیرد تا دیتای قدیمی مرورگر روی سرور رونویسی نشود
+      if (serverMtime > localMtime && !isServerEmpty) {
+        console.log(`Sync: Server is newer (${serverMtime} > ${localMtime}). Updating device...`);
+        const success = importDatabase(serverStr);
+        if (success) {
+          this.lastSyncedMtime = serverMtime;
+          localStorage.setItem("focusflow_last_synced_mtime", serverMtime.toString());
+          localStorage.setItem("focusflow_local_mtime", serverMtime.toString());
+          this.hasUnsavedLocalChanges = false;
+          localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
+          offlineQueue.clearQueue().catch(() => {});
+          window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+          window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
+          this.setStatus("connected");
+          return true;
+        }
+      }
+
+      // ۲. اگر کاربر روی همین دستگاه تغییر جدیدتری ایجاد کرده است (زمان ویرایش محلی بعد از سرور است):
+      // این دستگاه جدیدتر است و باید تغییرات به سرور ارسال شود
+      if (localMtime > serverMtime) {
+        console.log(`Sync: Local changes are newer (${localMtime} > ${serverMtime}). Imposing device data on database...`);
         return await this.pushLocalToServer(true);
       }
 
-      // ۲. اگر اولین بار است که این دستگاه باز می‌شود و سرور داده دارد، از سرور دریافت کند تا داده سرور پاک نشود
+      // ۳. اگر اولین بار است که این دستگاه باز می‌شود و سرور داده دارد، از سرور دریافت کند
       if (this.lastSyncedMtime === 0 && !isServerEmpty) {
-        console.log("Sync: First-time sync on this device. Initializing from server database...");
+        console.log("Sync: Initializing from server database...");
         const success = importDatabase(serverStr);
         if (success) {
           this.lastSyncedMtime = serverMtime;
           localStorage.setItem("focusflow_last_synced_mtime", serverMtime.toString());
+          localStorage.setItem("focusflow_local_mtime", serverMtime.toString());
           this.hasUnsavedLocalChanges = false;
           localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
+          offlineQueue.clearQueue().catch(() => {});
           window.dispatchEvent(new CustomEvent(SYNC_EVENT));
           window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
           this.setStatus("connected");
@@ -545,23 +569,7 @@ class SyncManager {
         }
       }
 
-      // ۳. اگر سرور آپدیت جدیدتری از دستگاه دیگر دارد و این دستگاه تغییری نکرده، دیتای جدید سرور را بگیرد
-      if (serverMtime > this.lastSyncedMtime && this.lastSyncedMtime > 0 && !isServerEmpty) {
-        console.log("Sync: Server has newer updates from another session. Updating device...");
-        const success = importDatabase(serverStr);
-        if (success) {
-          this.lastSyncedMtime = serverMtime;
-          localStorage.setItem("focusflow_last_synced_mtime", serverMtime.toString());
-          this.hasUnsavedLocalChanges = false;
-          localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
-          window.dispatchEvent(new CustomEvent(SYNC_EVENT));
-          window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
-          this.setStatus("connected");
-          return true;
-        }
-      }
-
-      // ۴. در غیر این صورت، اطلاعات این دستگاه را به عنوان نسخه معتبر به سرور ارسال کند
+      // ۴. در صورتی که دیتای سرور قدیمی‌تر است یا سرور خالی است:
       return await this.pushLocalToServer(true);
 
       return false;

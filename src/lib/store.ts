@@ -153,9 +153,22 @@ function getStore<T>(key: string): T[] {
     return [];
   }
 }
+export function markLocalModified(): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("focusflow_local_mtime", Date.now().toString());
+  }
+}
+
+export function getLocalModifiedTime(): number {
+  if (typeof window === "undefined") return 0;
+  const val = localStorage.getItem("focusflow_local_mtime");
+  return val ? parseFloat(val) : 0;
+}
+
 function setStore<T>(key: string, data: T[], silent: boolean = false): void {
   localStorage.setItem(key, JSON.stringify(data));
   if (!silent && typeof window !== "undefined") {
+    markLocalModified();
     window.dispatchEvent(new CustomEvent("focusflow-data-changed", { detail: { key } }));
   }
 }

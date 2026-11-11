@@ -49,13 +49,6 @@ class OfflineQueueManager {
       window.addEventListener("online", () => {
         this.processQueue();
       });
-
-      // گوش دادن به فوکوس تب
-      window.addEventListener("focus", () => {
-        if (navigator.onLine) {
-          this.processQueue();
-        }
-      });
     }
   }
 
