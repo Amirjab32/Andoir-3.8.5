@@ -1,4 +1,4 @@
-const CACHE_NAME = "focusflow-cache-v6";
+const CACHE_NAME = "focusflow-cache-v8";
 
 // Core static assets to precache
 const PRECACHE_ASSETS = [
@@ -53,7 +53,7 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Fetch Event: Cache First Strategy with Network Fallback for static assets
+// Fetch Event: Network First for HTML navigation, Cache First for media assets
 self.addEventListener("fetch", (event) => {
   // Do NOT handle or cache any API routes
   if (event.request.url.includes("/api/")) {
@@ -62,6 +62,26 @@ self.addEventListener("fetch", (event) => {
 
   // Only handle GET requests and skip browser extensions
   if (event.request.method !== "GET" || !event.request.url.startsWith(self.location.origin)) {
+    return;
+  }
+
+  const isNavigation = event.request.mode === "navigate" || 
+    event.request.destination === "document" || 
+    event.request.headers.get("accept")?.includes("text/html");
+
+  if (isNavigation) {
+    // Network First for HTML so users immediately get app updates
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request).then((cached) => cached || caches.match("/index.html") || caches.match("/")))
+    );
     return;
   }
 
@@ -91,10 +111,6 @@ self.addEventListener("fetch", (event) => {
 
         return networkResponse;
       }).catch(() => {
-        // Fallback for offline mode if HTML navigation is requested
-        if (event.request.headers.get("accept")?.includes("text/html")) {
-          return caches.match("/index.html") || caches.match("/");
-        }
         return new Response("Offline", { status: 503, statusText: "Offline" });
       });
     })

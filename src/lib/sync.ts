@@ -253,6 +253,7 @@ class SyncManager {
         headers: {
           "Content-Type": "application/json",
         },
+        cache: "no-store",
         body: JSON.stringify({ data: parsedData }),
       });
 
@@ -400,7 +401,7 @@ class SyncManager {
     }
 
     try {
-      const response = await fetch(apiUrl("/api/db"));
+      const response = await fetch(apiUrl(`/api/db?t=${Date.now()}`), { cache: "no-store" });
       if (!response.ok) {
         this.setStatus("offline");
         return false;
@@ -474,7 +475,7 @@ class SyncManager {
     if (this.isPushing) return false;
 
     try {
-      const response = await fetch(apiUrl("/api/db"));
+      const response = await fetch(apiUrl(`/api/db?t=${Date.now()}`), { cache: "no-store" });
       if (!response.ok) {
         this.setStatus("offline");
         return false;
@@ -502,6 +503,7 @@ class SyncManager {
           this.hasUnsavedLocalChanges = false;
           localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
           window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+          window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
           this.setStatus("connected");
           return true;
         }
@@ -521,26 +523,46 @@ class SyncManager {
       }
 
       // اطلاعات با هم یکی نیستند:
-      // اصل قانون کاربر: «باید اطلاعات دیوایس من به دیتابیس ارجهیت داشته باشه و وقتی وصل شدم و اطلاعات با هم یکی نبودن،
-      // اطلاعات دیوایس من به دیتابیس تحمیل بشه و اطلاعات دیتابیس اپدیت بشه»
-      if (this.hasUnsavedLocalChanges || localCount >= serverCount || this.lastSyncedMtime === 0) {
-        console.log(`Sync: Imposing device data on database (Local items: ${localCount}, Server items: ${serverCount})...`);
+      // ۱. اگر این دستگاه تغییرات ذخیره‌نشده محلی دارد، تغییراتش را به سرور تحمیل کند
+      if (this.hasUnsavedLocalChanges) {
+        console.log(`Sync: Device has unsaved changes. Imposing device data on database...`);
         return await this.pushLocalToServer(true);
-      } else if (serverMtime > this.lastSyncedMtime && this.lastSyncedMtime > 0 && !this.hasUnsavedLocalChanges) {
-        // این دستگاه در حالت بیکار بوده و هیج تغییری نداده، در حالی که دستگاه دیگر قبلاً در سرور ثبت کرده
-        console.log("Sync: Receiving fresh updates from server into clean device...");
+      }
+
+      // ۲. اگر اولین بار است که این دستگاه باز می‌شود و سرور داده دارد، از سرور دریافت کند تا داده سرور پاک نشود
+      if (this.lastSyncedMtime === 0 && !isServerEmpty) {
+        console.log("Sync: First-time sync on this device. Initializing from server database...");
         const success = importDatabase(serverStr);
         if (success) {
           this.lastSyncedMtime = serverMtime;
           localStorage.setItem("focusflow_last_synced_mtime", serverMtime.toString());
+          this.hasUnsavedLocalChanges = false;
+          localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
           window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+          window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
           this.setStatus("connected");
           return true;
         }
-      } else {
-        // در هر حالت دیگر، ارجحیت قطعی با اطلاعات دیوایس فعلی کاربر است
-        return await this.pushLocalToServer(true);
       }
+
+      // ۳. اگر سرور آپدیت جدیدتری از دستگاه دیگر دارد و این دستگاه تغییری نکرده، دیتای جدید سرور را بگیرد
+      if (serverMtime > this.lastSyncedMtime && this.lastSyncedMtime > 0 && !isServerEmpty) {
+        console.log("Sync: Server has newer updates from another session. Updating device...");
+        const success = importDatabase(serverStr);
+        if (success) {
+          this.lastSyncedMtime = serverMtime;
+          localStorage.setItem("focusflow_last_synced_mtime", serverMtime.toString());
+          this.hasUnsavedLocalChanges = false;
+          localStorage.removeItem(HAS_UNPUSHED_CHANGES_KEY);
+          window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+          window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
+          this.setStatus("connected");
+          return true;
+        }
+      }
+
+      // ۴. در غیر این صورت، اطلاعات این دستگاه را به عنوان نسخه معتبر به سرور ارسال کند
+      return await this.pushLocalToServer(true);
 
       return false;
     } catch (err) {

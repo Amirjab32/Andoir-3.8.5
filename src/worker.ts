@@ -220,7 +220,8 @@ function jsonResponse(data: any, status: number = 200): Response {
       "Content-Type": "application/json; charset=utf-8",
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization"
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate"
     }
   });
 }
@@ -548,6 +549,15 @@ export default {
       if (pathname === "/manifest.json") {
         const newHeaders = new Headers(response.headers);
         newHeaders.set("Content-Type", "application/manifest+json; charset=utf-8");
+        return new Response(response.body, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: newHeaders,
+        });
+      }
+      if (pathname === "/" || pathname === "/index.html") {
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set("Cache-Control", "no-cache, must-revalidate");
         return new Response(response.body, {
           status: response.status,
           statusText: response.statusText,
