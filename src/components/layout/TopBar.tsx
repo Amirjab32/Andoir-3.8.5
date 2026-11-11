@@ -6,7 +6,7 @@ import { useThemeStyles } from "@/lib/useThemeStyles";
 import { syncManager, SyncStatus, SYNC_STATUS_EVENT } from "@/lib/sync";
 import { offlineQueue, OFFLINE_QUEUE_EVENT } from "@/lib/offlineQueue";
 import { TimeCheckService, TimeCheckStatus, TIME_STATUS_EVENT } from "@/lib/timeCheck";
-import { Wifi, WifiOff, RefreshCw, Laptop, AlertTriangle, X, BellRing } from "lucide-react";
+import { Wifi, WifiOff, RefreshCw, Laptop, AlertTriangle, X, BellRing, Check } from "lucide-react";
 import { PWAInstallButton } from "@/components/shared/PWAInstallButton";
 import AlarmPermissionGuideModal from "@/components/shared/AlarmPermissionGuideModal";
 
@@ -33,6 +33,7 @@ export default function TopBar({ view, menuOpen, onMenuToggle }: Props) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => syncManager.getStatus());
   const [queueCount, setQueueCount] = useState<number>(() => offlineQueue.getPendingCount());
   const [isRotating, setIsRotating] = useState(false);
+  const [justSynced, setJustSynced] = useState(false);
   const [timeStatus, setTimeStatus] = useState<TimeCheckStatus>(() => TimeCheckService.getStatus());
   const [showDriftDialog, setShowDriftDialog] = useState(false);
   const [showAlarmGuide, setShowAlarmGuide] = useState(false);
@@ -62,8 +63,24 @@ export default function TopBar({ view, menuOpen, onMenuToggle }: Props) {
 
   const handleManualSync = async () => {
     setIsRotating(true);
+    try {
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(25);
+      }
+    } catch (_) {}
+
     await syncManager.forceSync();
-    setTimeout(() => setIsRotating(false), 800);
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
+      window.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT, { detail: syncManager.getStatus() }));
+    }
+
+    setJustSynced(true);
+    setTimeout(() => {
+      setIsRotating(false);
+      setJustSynced(false);
+    }, 1000);
   };
 
   return (
@@ -129,48 +146,57 @@ export default function TopBar({ view, menuOpen, onMenuToggle }: Props) {
             className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-bold border transition-all duration-200 hover:bg-white/5 active:scale-95 cursor-pointer"
             style={{ borderColor: cardBorder }}
           >
-            {syncStatus === "connected" && (
+            {justSynced ? (
               <>
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                <Wifi className="h-3.5 w-3.5 text-emerald-500" />
-                <span className="hidden sm:inline-block text-emerald-500">همگام با لپ‌تاپ</span>
+                <Check className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-emerald-400">همگام شد</span>
               </>
-            )}
-
-            {syncStatus === "syncing" && (
+            ) : (
               <>
-                <RefreshCw className={`h-3.5 w-3.5 text-indigo-400 ${isRotating || "animate-spin"}`} />
-                <span className="hidden sm:inline-block text-indigo-400">در حال ذخیره‌سازی...</span>
-              </>
-            )}
-
-            {syncStatus === "offline" && (
-              <>
-                <span className="h-2 w-2 rounded-full bg-amber-500"></span>
-                <WifiOff className="h-3.5 w-3.5 text-amber-500" />
-                <span className="hidden sm:inline-block text-amber-500">
-                  {queueCount > 0 ? `آفلاین (${toPersianDigits(queueCount)} در صف)` : "آفلاین (دیتابیس محلی)"}
-                </span>
-                {queueCount > 0 && (
-                  <span className="sm:hidden px-1.5 py-0.2 bg-amber-500/20 text-amber-400 rounded-full text-[9px] font-bold">
-                    {toPersianDigits(queueCount)}
-                  </span>
+                {syncStatus === "connected" && (
+                  <>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <Wifi className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="hidden sm:inline-block text-emerald-500">همگام با لپ‌تاپ</span>
+                  </>
                 )}
+
+                {syncStatus === "syncing" && (
+                  <>
+                    <RefreshCw className={`h-3.5 w-3.5 text-indigo-400 ${isRotating || "animate-spin"}`} />
+                    <span className="hidden sm:inline-block text-indigo-400">در حال ذخیره‌سازی...</span>
+                  </>
+                )}
+
+                {syncStatus === "offline" && (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-amber-500"></span>
+                    <WifiOff className="h-3.5 w-3.5 text-amber-500" />
+                    <span className="hidden sm:inline-block text-amber-500">
+                      {queueCount > 0 ? `آفلاین (${toPersianDigits(queueCount)} در صف)` : "آفلاین (دیتابیس محلی)"}
+                    </span>
+                    {queueCount > 0 && (
+                      <span className="sm:hidden px-1.5 py-0.2 bg-amber-500/20 text-amber-400 rounded-full text-[9px] font-bold">
+                        {toPersianDigits(queueCount)}
+                      </span>
+                    )}
+                  </>
+                )}
+
+                {syncStatus === "idle" && (
+                  <>
+                    <Laptop className="h-3.5 w-3.5 text-gray-400" />
+                    <span className="hidden sm:inline-block text-gray-400">آماده هماهنگی</span>
+                  </>
+                )}
+
+                {/* آیکون لود دستی برای دسکتاپ/گوشی */}
+                <RefreshCw className={`h-3 w-3 text-gray-400 mr-0.5 sm:mr-1 ${isRotating ? "animate-spin" : ""}`} />
               </>
             )}
-
-            {syncStatus === "idle" && (
-              <>
-                <Laptop className="h-3.5 w-3.5 text-gray-400" />
-                <span className="hidden sm:inline-block text-gray-400">آماده هماهنگی</span>
-              </>
-            )}
-
-            {/* آیکون لود دستی برای دسکتاپ/گوشی */}
-            <RefreshCw className={`h-3 w-3 text-gray-400 mr-0.5 sm:mr-1 ${isRotating ? "animate-spin" : ""}`} />
           </button>
 
           {/* دکمه راهنمای بیدارباش دقیق و تست آلارم ۵ ثانیه‌ای */}

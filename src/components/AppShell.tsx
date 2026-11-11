@@ -23,6 +23,7 @@ import { startReminderScheduler, runActiveRemindersCheck } from "@/lib/notificat
 import IntroStressOverlay from "@/components/shared/IntroStressOverlay";
 import BackupModal from "@/components/shared/BackupModal";
 import DeleteConfirmationModal from "@/components/shared/DeleteConfirmationModal";
+import PullToRefresh from "@/components/shared/PullToRefresh";
 
 const ALL_INTERVALS = [1, 3, 7, 14, 30, 60];
 const DEFAULT_STAGES = 4;
@@ -401,7 +402,8 @@ function AppContent() {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen flex flex-col font-sans transition-colors duration-300" style={{ backgroundColor: bg, color: fg }}>
+    <PullToRefresh>
+      <div dir="rtl" className="min-h-screen flex flex-col font-sans transition-colors duration-300" style={{ backgroundColor: bg, color: fg }}>
       {/* نوار بالایی و تایم‌لاین نماز به صورت چسبان در بالای صفحه */}
       <div className="sticky top-0 z-30 w-full">
         <TopBar 
@@ -490,7 +492,8 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-    </div>
+      </div>
+    </PullToRefresh>
   );
 }
 

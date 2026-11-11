@@ -290,9 +290,14 @@ class SyncManager {
   }
 
   // هماهنگ‌سازی دستی فوری (بکاپ سریع) با اولویت اطلاعات دیوایس
-  public async forceSync() {
+  public async forceSync(): Promise<boolean> {
     this.setStatus("syncing");
-    await this.reconcileWithServer();
+    const result = await this.reconcileWithServer();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
+      window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+    }
+    return result;
   }
 
   // اعمال اجباری فایل اطلاعات به حافظه محلی و سرور (زور گفتن به سیستم ذخیره‌سازی محلی)
@@ -450,7 +455,9 @@ class SyncManager {
           if (success) {
             this.lastSyncedMtime = serverMtime;
             localStorage.setItem("focusflow_last_synced_mtime", serverMtime.toString());
+            localStorage.setItem("focusflow_local_mtime", serverMtime.toString());
             window.dispatchEvent(new CustomEvent(SYNC_EVENT));
+            window.dispatchEvent(new CustomEvent("focusflow-data-changed"));
             this.setStatus("connected");
             return true;
           }
